@@ -9,11 +9,11 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.2",
     "axios": "^1.6.8",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1",
     "uuid": "^13.0.0"
   }
 }

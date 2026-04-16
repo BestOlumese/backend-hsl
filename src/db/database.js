@@ -1,26 +1,23 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
-import path from 'path';
+import { createClient } from "@libsql/client";
+import dotenv from "dotenv";
 
-// Store in /tmp for Vercel serverless compatibility, otherwise use local directory out of the box
-const DB_PATH = process.env.VERCEL || process.env.NODE_ENV === 'production'
-  ? '/tmp/profiles.db' 
-  : path.resolve('./profiles.db');
+// Load environment variables for local development
+dotenv.config();
 
-let dbInstance = null;
+let wrappedDb = null;
 
 export const getDb = async () => {
-  if (dbInstance) {
-    return dbInstance;
+  if (wrappedDb) {
+    return wrappedDb;
   }
 
-  dbInstance = await open({
-    filename: DB_PATH,
-    driver: sqlite3.Database
+  const client = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
   });
 
   // Bootstrap the schema if it doesn't exist
-  await dbInstance.exec(`
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS profiles (
       id TEXT PRIMARY KEY,
       name TEXT UNIQUE COLLATE NOCASE NOT NULL,
@@ -35,5 +32,21 @@ export const getDb = async () => {
     );
   `);
 
-  return dbInstance;
+  // Wrap the LibSQL client to match the native sqlite module API endpoints
+  // This allows the profile.controller.js to use .get(), .all(), and .run() natively!
+  wrappedDb = {
+    get: async (sql, args = []) => {
+      const result = await client.execute({ sql, args });
+      return result.rows.length > 0 ? result.rows[0] : undefined;
+    },
+    all: async (sql, args = []) => {
+      const result = await client.execute({ sql, args });
+      return result.rows;
+    },
+    run: async (sql, args = []) => {
+      return await client.execute({ sql, args });
+    }
+  };
+
+  return wrappedDb;
 };
