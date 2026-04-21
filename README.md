@@ -1,46 +1,74 @@
-# API Integration & Data Persistence - Stage 1
+# Intelligence Query Engine - Stage 2
 
-This is a backend service for Stage 1, expanding on Stage 0. It accepts a name, communicates concurrently with three external APIs (Genderize, Agify, Nationalize) for classification logic, and persists the payload securely in a SQLite database with idempotent properties. 
-
-It provides four core CRUD endpoints compliant with exact response schemas and handles edge-cause external API failures gracefully.
+This is the production-ready **Intelligence Query Engine** built for Insighta Labs. The system allows demographic intelligence analysts to filter, sort, paginate, and query user profiles using natural language.
 
 ## 🚀 Key Features
 
-* **Concurrency:** Uses `Promise.all` to fetch Gender, Age, and Nationality endpoints simultaneously.
-* **SQLite Persistence:** Uses zero-config SQLite (`sqlite3`) storing data locally, handling duplicates based on case-insensitive matches.
-* **UUID v7 Identifiers:** Generates structurally sequential UUIDs (v7).
-* **Idempotent Creations:** Duplicate incoming `name` parameters return HTTP 200 containing the existing db record instead of mutating the schema.
-* **CORS Compatible:** Ensures `Access-Control-Allow-Origin: *` to satisfy remote grading scripts.
-* **Rigorous Validation & Status Codes:** Thorough handling of 400 (Bad Requests), 422 (Unprocessable Entities), 404 (Not Found), and bespoke 502 logic for invalid external responses (e.g. `gender: null`, `age: null`, null country).
+* **Natural Language Query (NLQ):** An informal search engine that parses natural phrases like *"young males from nigeria"* into structured data filters.
+* **Advanced Filtering:** Combine multiple conditions including gender, country, age ranges, and statistical probability thresholds.
+* **Smart Pagination & Sorting:** Full support for `page` and `limit` with accurate metadata, and sorting by `age`, `created_at`, or `gender_probability`.
+* **Robust Seeding:** A database initialization script that handles bulk demographic data idempotentally.
+* **Idempotent creations:** Duplicate incoming `name` parameters return the existing database record.
+* **LibSQL Persistence:** Powered by Turso for high-performance, edge-ready data storage.
 
 ## 📡 Endpoints
 
-### 1. Create Profile
+### 1. Natural Language Search
+**GET** `/api/profiles/search?q={query}`
+
+Parses informal phrases into filters.
+* **Examples**:
+  - `?q=young males from nigeria`
+  - `?q=females under 30`
+  - `?q=seniors from united kingdom`
+* **Keywords**: "young" (16-24), "above X", "under X", gender titles, and country names.
+
+### 2. Get All Profiles (Advanced Query)
+**GET** `/api/profiles`
+
+Supports standard query parameters for precise segmentation:
+* **Filters**: `gender`, `country_id`, `age_group`, `min_age`, `max_age`, `min_gender_probability`, `min_country_probability`.
+* **Sorting**: `sort_by` (`age`, `created_at`, `gender_probability`) and `order` (`asc`, `desc`).
+* **Pagination**: `page` (default: 1) and `limit` (default: 10, max: 50).
+
+### 3. Create Profile
 **POST** `/api/profiles`
-Request body: `{ "name": "ella" }`
-Will orchestrate external data fetching or return an existing configuration idempotently. 
+Request body: `{ "name": "bella" }`
+Fetch prediction data concurrently from Genderize, Agify, and Nationalize APIs.
 
-### 2. Get Single Profile
-**GET** `/api/profiles/{id}`
-Returns the specified `id` record with complete fetched probability, confidence, and nested details.
-
-### 3. Get All Profiles (with filtering)
-**GET** `/api/profiles?gender=female&age_group=adult`
-Lists mapped profiles without meta probability details. Supports arbitrary query filtering by `gender`, `country_id`, and `age_group` (case insensitive).
-
-### 4. Delete Profile
-**DELETE** `/api/profiles/{id}`
-Erases existing profile metadata. Returns 204 No Content.
+### 4. Single Profile & Delete
+* **GET** `/api/profiles/{id}`: Fetch detailed record.
+* **DELETE** `/api/profiles/{id}`: Remove record from engine.
 
 ## 💻 Local Development
 
-1. Clone or download the repository.
-2. Install dependencies (Requires Node 18+):
+1. **Install Dependencies**:
    ```bash
    npm install
    ```
-3. Boot the local server (Port `3000` by default):
-   ```bash
-   npm start
+2. **Setup Environment**:
+   Create a `.env` file with your Turso credentials:
+   ```env
+   TURSO_DATABASE_URL=your_libsql_url
+   TURSO_AUTH_TOKEN=your_auth_token
    ```
-4. Perform testing targeting `http://localhost:3000/api/profiles` with a POST JSON body `{ "name": "sample" }`.
+3. **Seed Database**:
+   Populate the engine with benchmark profile data:
+   ```bash
+   npm run seed
+   ```
+4. **Boot Server**:
+   ```bash
+   npm run dev
+   ```
+   The API will be available at `http://localhost:3000`.
+
+## 🧪 Testing
+You can test the engine using standard HTTP clients or terminal commands:
+```bash
+# Complex Query example
+curl "http://localhost:3000/api/profiles?min_age=25&gender=female&sort_by=age&order=desc"
+
+# NLQ example
+curl "http://localhost:3000/api/profiles/search?q=young+males+from+nigeria"
+```

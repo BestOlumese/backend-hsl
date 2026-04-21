@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
+import { parseNLQ } from "../utils/nlpParser.js";
 import { getDb } from "../db/database.js";
 import { fetchGenderPrediction } from "../services/genderize.service.js";
 import { fetchAgePrediction } from "../services/agify.service.js";
@@ -7,6 +8,7 @@ import {
   getAgeGroup,
   getHighestProbabilityCountry,
 } from "../utils/classification.js";
+import { getCountryName } from "../utils/countryMapping.js";
 
 export const createProfile = async (req, res) => {
   try {
@@ -76,6 +78,7 @@ export const createProfile = async (req, res) => {
       age: ageData.age,
       age_group: ageGroup,
       country_id: countryObj.country_id,
+      country_name: getCountryName(countryObj.country_id),
       country_probability: countryObj.probability,
       created_at: new Date().toISOString(),
     };
@@ -84,8 +87,8 @@ export const createProfile = async (req, res) => {
     await db.run(
       `
       INSERT INTO profiles (
-        id, name, gender, gender_probability, sample_size, age, age_group, country_id, country_probability, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, gender, gender_probability, sample_size, age, age_group, country_id, country_name, country_probability, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       [
         newProfile.id,
@@ -96,6 +99,7 @@ export const createProfile = async (req, res) => {
         newProfile.age,
         newProfile.age_group,
         newProfile.country_id,
+        newProfile.country_name,
         newProfile.country_probability,
         newProfile.created_at,
       ],
@@ -161,43 +165,104 @@ export const getSingleProfile = async (req, res) => {
 
 export const getAllProfiles = async (req, res) => {
   try {
-    const { gender, country_id, age_group } = req.query;
+    const { 
+      gender, country_id, age_group, 
+      min_age, max_age, 
+      min_gender_probability, min_country_probability,
+      sort_by, order,
+      page, limit
+    } = req.query;
+
     const db = await getDb();
 
-    let query = `SELECT * FROM profiles WHERE 1=1`;
-    const params = [];
+    let queryParams = [];
+    let conditions = "";
 
     if (gender) {
-      query += ` AND lower(gender) = ?`;
-      params.push(gender.toLowerCase());
+      conditions += ` AND lower(gender) = ?`;
+      queryParams.push(gender.toLowerCase());
     }
 
     if (country_id) {
-      query += ` AND lower(country_id) = ?`;
-      params.push(country_id.toLowerCase());
+      conditions += ` AND lower(country_id) = ?`;
+      queryParams.push(country_id.toLowerCase());
     }
 
     if (age_group) {
-      query += ` AND lower(age_group) = ?`;
-      params.push(age_group.toLowerCase());
+      conditions += ` AND lower(age_group) = ?`;
+      queryParams.push(age_group.toLowerCase());
     }
 
-    const profiles = await db.all(query, params);
+    if (min_age) {
+       conditions += ` AND age >= ?`;
+       queryParams.push(parseInt(min_age, 10));
+    }
 
-    // Strip out extra meta-data properties to match the endpoint's clean contract requirements
-    const transformedProfiles = profiles.map((p) => ({
+    if (max_age) {
+       conditions += ` AND age <= ?`;
+       queryParams.push(parseInt(max_age, 10));
+    }
+
+    if (min_gender_probability) {
+       conditions += ` AND gender_probability >= ?`;
+       queryParams.push(parseFloat(min_gender_probability));
+    }
+
+    if (min_country_probability) {
+       conditions += ` AND country_probability >= ?`;
+       queryParams.push(parseFloat(min_country_probability));
+    }
+
+    const countQuery = `SELECT count(*) as total FROM profiles WHERE 1=1` + conditions;
+    let query = `SELECT * FROM profiles WHERE 1=1` + conditions;
+
+    // Sorting
+    const validSorts = ['age', 'created_at', 'gender_probability'];
+    const validOrders = ['asc', 'desc'];
+    
+    if (sort_by && validSorts.includes(sort_by.toLowerCase())) {
+       const sortOrder = (order && validOrders.includes(order.toLowerCase())) ? order.toLowerCase() : 'asc';
+       query += ` ORDER BY ${sort_by.toLowerCase()} ${sortOrder}`;
+    }
+
+    // Pagination
+    let currentPage = Math.max(1, parseInt(page, 10) || 1);
+    let currentLimit = parseInt(limit, 10) || 10;
+    if (currentLimit > 50) currentLimit = 50;
+
+    const offset = (currentPage - 1) * currentLimit;
+
+    query += ` LIMIT ? OFFSET ?`;
+
+    const totalResult = await db.get(countQuery, queryParams);
+    const total_records = totalResult ? totalResult.total : 0;
+    const total_pages = Math.ceil(total_records / currentLimit);
+
+    const profilesParams = [...queryParams, currentLimit, offset];
+    const profiles = await db.all(query, profilesParams);
+
+    const data = profiles.map((p) => ({
       id: p.id,
       name: p.name,
       gender: p.gender,
+      gender_probability: p.gender_probability,
       age: p.age,
       age_group: p.age_group,
       country_id: p.country_id,
+      country_name: p.country_name,
+      country_probability: p.country_probability,
+      created_at: p.created_at
     }));
 
     return res.status(200).json({
       status: "success",
-      count: transformedProfiles.length,
-      data: transformedProfiles,
+      meta: {
+        total_records,
+        current_page: currentPage,
+        total_pages,
+        limit: currentLimit
+      },
+      data: data,
     });
   } catch (error) {
     console.error("Get All Profiles Error:", error);
@@ -205,6 +270,37 @@ export const getAllProfiles = async (req, res) => {
       status: "error",
       message: "Internal server error",
     });
+  }
+};
+
+export const searchProfiles = async (req, res) => {
+  try {
+      const { q, page, limit, sort_by, order } = req.query;
+      if (!q) {
+           return res.status(400).json({ 
+               status: "error", 
+               message: "Missing search query parameter 'q'" 
+           });
+      }
+      
+      const filters = parseNLQ(q);
+      
+      // Override req.query for standard getAllProfiles pipeline
+      req.query = { 
+          ...filters, 
+          page, 
+          limit,
+          sort_by,
+          order
+      };
+      
+      return getAllProfiles(req, res);
+  } catch (error) {
+      console.error("Search Profiles Error:", error);
+      return res.status(500).json({
+          status: "error",
+          message: "Internal server error"
+      });
   }
 };
 
