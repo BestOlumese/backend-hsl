@@ -5,13 +5,12 @@ import { authenticate } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
-router.use(authRateLimiter);
-
 router.get('/github', githubAuth);
 router.get('/github/callback', githubCallback);
 router.post('/github/callback', githubCallback); // For CLI
 router.post('/refresh', refresh);
 router.post('/logout', logout);
 router.get('/me', authenticate, getMe);
+router.get('/me/profile', authenticate, getMe); // Extra alias
 
 export default router;

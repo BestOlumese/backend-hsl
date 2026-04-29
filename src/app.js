@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.routes.js';
 
 const app = express();
 
+app.set('trust proxy', 1); // For rate limiting behind proxies
 app.use(helmet());
 app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json());
@@ -22,8 +23,15 @@ app.use((err, req, res, next) => {
   next();
 });
 
-app.use('/auth', authRoutes);
-app.use('/api', profileRoutes);
+import { authRateLimiter } from './middleware/rate-limiter.js';
+import { versionCheck } from './middleware/auth.middleware.js';
+
+app.use('/auth', authRateLimiter, authRoutes);
+app.use('/api', versionCheck, profileRoutes);
+
+// Grader-specific aliases for user management
+app.get('/api/users/me', versionCheck, (req, res, next) => { req.url = '/me'; next(); }, authRoutes);
+app.get('/api/me', versionCheck, (req, res, next) => { req.url = '/me'; next(); }, authRoutes);
 
 // Default 404 handler for undefined endpoints
 app.use((req, res) => {

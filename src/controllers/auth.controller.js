@@ -74,13 +74,16 @@ export const githubCallback = async (req, res) => {
         [new Date().toISOString(), githubUser.login, githubUser.avatar_url, email, user.id]);
     } else {
       // Create user
+      const userCount = await db.get('SELECT COUNT(*) as count FROM users');
+      const isFirstUser = userCount.count === 0;
+
       user = {
         id: uuidv7(),
         github_id: githubUser.id.toString(),
         username: githubUser.login,
         email: email,
         avatar_url: githubUser.avatar_url,
-        role: 'analyst', // Default role
+        role: isFirstUser ? 'admin' : 'analyst', // First user is admin
         is_active: 1,
         created_at: new Date().toISOString(),
         last_login_at: new Date().toISOString()
@@ -109,7 +112,15 @@ export const githubCallback = async (req, res) => {
     res.json({
       status: 'success',
       access_token: accessToken,
-      refresh_token: refreshToken
+      refresh_token: refreshToken,
+      token_type: 'Bearer',
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        avatar_url: user.avatar_url
+      }
     });
 
   } catch (error) {
@@ -154,7 +165,15 @@ export const refresh = async (req, res) => {
     res.json({
       status: 'success',
       access_token: newAccessToken,
-      refresh_token: newRefreshToken
+      refresh_token: newRefreshToken,
+      token_type: 'Bearer',
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        avatar_url: user.avatar_url
+      }
     });
   } catch (error) {
     res.status(401).json({ status: 'error', message: 'Invalid refresh token' });
