@@ -12,9 +12,16 @@
   "dependencies": {
     "@libsql/client": "^0.17.2",
     "axios": "^1.6.8",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "csv-stringify": "^6.4.6",
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.4.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "pkce-challenge": "^6.0.0",
     "uuid": "^13.0.0"
   }
 }

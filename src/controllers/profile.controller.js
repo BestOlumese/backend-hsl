@@ -40,10 +40,10 @@ export const createProfile = async (req, res) => {
           name: existing.name,
           gender: existing.gender,
           gender_probability: existing.gender_probability,
-          sample_size: existing.sample_size,
           age: existing.age,
           age_group: existing.age_group,
           country_id: existing.country_id,
+          country_name: existing.country_name,
           country_probability: existing.country_probability,
           created_at: existing.created_at,
         },
@@ -108,7 +108,18 @@ export const createProfile = async (req, res) => {
     // Respond with the newly created profile
     return res.status(201).json({
       status: "success",
-      data: newProfile,
+      data: {
+        id: newProfile.id,
+        name: newProfile.name,
+        gender: newProfile.gender,
+        gender_probability: newProfile.gender_probability,
+        age: newProfile.age,
+        age_group: newProfile.age_group,
+        country_id: newProfile.country_id,
+        country_name: newProfile.country_name,
+        country_probability: newProfile.country_probability,
+        created_at: newProfile.created_at
+      },
     });
   } catch (error) {
     console.error("API Error:", error.message);
@@ -254,13 +265,36 @@ export const getAllProfiles = async (req, res) => {
       created_at: p.created_at
     }));
 
+    const baseUrl = '/api/profiles';
+    const queryStr = req.originalUrl.includes('?') ? req.originalUrl.split('?')[1] : '';
+    const params = new URLSearchParams(queryStr);
+    
+    params.set('page', currentPage);
+    params.set('limit', currentLimit);
+    const self = `${baseUrl}?${params.toString()}`;
+
+    let next = null;
+    if (currentPage < total_pages) {
+      params.set('page', currentPage + 1);
+      next = `${baseUrl}?${params.toString()}`;
+    }
+
+    let prev = null;
+    if (currentPage > 1) {
+      params.set('page', currentPage - 1);
+      prev = `${baseUrl}?${params.toString()}`;
+    }
+
     return res.status(200).json({
       status: "success",
-      meta: {
-        total_records,
-        current_page: currentPage,
-        total_pages,
-        limit: currentLimit
+      page: currentPage,
+      limit: currentLimit,
+      total: total_records,
+      total_pages,
+      links: {
+        self,
+        next,
+        prev
       },
       data: data,
     });
@@ -270,6 +304,71 @@ export const getAllProfiles = async (req, res) => {
       status: "error",
       message: "Internal server error",
     });
+  }
+};
+
+export const exportProfiles = async (req, res) => {
+  try {
+    const { format } = req.query;
+    if (format !== 'csv') {
+      return res.status(400).json({ status: 'error', message: 'Only CSV format is supported' });
+    }
+
+    const { 
+      gender, country_id, age_group, 
+      min_age, max_age, 
+      sort_by, order
+    } = req.query;
+
+    const db = await getDb();
+    let queryParams = [];
+    let conditions = "";
+
+    if (gender) {
+      conditions += ` AND lower(gender) = ?`;
+      queryParams.push(gender.toLowerCase());
+    }
+    if (country_id) {
+      conditions += ` AND lower(country_id) = ?`;
+      queryParams.push(country_id.toLowerCase());
+    }
+    if (age_group) {
+      conditions += ` AND lower(age_group) = ?`;
+      queryParams.push(age_group.toLowerCase());
+    }
+    if (min_age) {
+       conditions += ` AND age >= ?`;
+       queryParams.push(parseInt(min_age, 10));
+    }
+    if (max_age) {
+       conditions += ` AND age <= ?`;
+       queryParams.push(parseInt(max_age, 10));
+    }
+
+    let query = `SELECT id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability, created_at FROM profiles WHERE 1=1` + conditions;
+
+    const validSorts = ['age', 'created_at'];
+    if (sort_by && validSorts.includes(sort_by.toLowerCase())) {
+       const sortOrder = (order && ['asc', 'desc'].includes(order.toLowerCase())) ? order.toLowerCase() : 'asc';
+       query += ` ORDER BY ${sort_by.toLowerCase()} ${sortOrder}`;
+    }
+
+    const profiles = await db.all(query, queryParams);
+
+    // CSV generation
+    let csv = "id,name,gender,gender_probability,age,age_group,country_id,country_name,country_probability,created_at\n";
+    profiles.forEach(p => {
+      csv += `${p.id},${p.name},${p.gender},${p.gender_probability},${p.age},${p.age_group},${p.country_id},${p.country_name},${p.country_probability},${p.created_at}\n`;
+    });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="profiles_${timestamp}.csv"`);
+    return res.status(200).send(csv);
+
+  } catch (error) {
+    console.error("Export Error:", error);
+    res.status(500).json({ status: 'error', message: 'Internal server error' });
   }
 };
 

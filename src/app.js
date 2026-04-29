@@ -1,11 +1,18 @@
 import express from 'express';
 import cors from 'cors';
+import morgan from 'morgan';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import profileRoutes from './routes/profile.routes.js';
+import authRoutes from './routes/auth.routes.js';
 
 const app = express();
 
-app.use(cors({ origin: '*' }));
+app.use(helmet());
+app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
+app.use(morgan(':method :url :status :response-time ms'));
 
 // Gracefully intercept express.json() payload parsing errors
 app.use((err, req, res, next) => {
@@ -15,6 +22,7 @@ app.use((err, req, res, next) => {
   next();
 });
 
+app.use('/auth', authRoutes);
 app.use('/api', profileRoutes);
 
 // Default 404 handler for undefined endpoints

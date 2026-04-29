@@ -33,6 +33,29 @@ export const getDb = async () => {
     );
   `);
 
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      github_id TEXT UNIQUE NOT NULL,
+      username TEXT NOT NULL,
+      email TEXT,
+      avatar_url TEXT,
+      role TEXT DEFAULT 'analyst',
+      is_active INTEGER DEFAULT 1,
+      last_login_at TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+  `);
+
   // Wrap the LibSQL client to match the native sqlite module API endpoints
   // This allows the profile.controller.js to use .get(), .all(), and .run() natively!
   wrappedDb = {

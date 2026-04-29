@@ -1,74 +1,93 @@
-# Intelligence Query Engine - Stage 2
+# Insighta Labs+ - Secure Profile Intelligence System
 
-This is the production-ready **Intelligence Query Engine** built for Insighta Labs. The system allows demographic intelligence analysts to filter, sort, paginate, and query user profiles using natural language.
+Insighta Labs+ is a secure, multi-interface platform for demographic intelligence. It builds upon the Stage 2 Intelligence Query Engine by adding robust authentication, role-based access control, and dedicated CLI and Web interfaces.
 
-## 🚀 Key Features
+## 🌟 Key Features (Stage 3)
 
-* **Natural Language Query (NLQ):** An informal search engine that parses natural phrases like *"young males from nigeria"* into structured data filters.
-* **Advanced Filtering:** Combine multiple conditions including gender, country, age ranges, and statistical probability thresholds.
-* **Smart Pagination & Sorting:** Full support for `page` and `limit` with accurate metadata, and sorting by `age`, `created_at`, or `gender_probability`.
-* **Robust Seeding:** A database initialization script that handles bulk demographic data idempotentally.
-* **Idempotent creations:** Duplicate incoming `name` parameters return the existing database record.
-* **LibSQL Persistence:** Powered by Turso for high-performance, edge-ready data storage.
+- **Secure Authentication:** GitHub OAuth with PKCE for both CLI and Web.
+- **Token Lifecycle Management:** Secure Access (3m) and Refresh (5m) token rotation.
+- **Role-Based Access Control (RBAC):**
+  - `admin`: Full access (CRUD + Query).
+  - `analyst`: Read-only access (Read + Search).
+- **Multi-Interface Access:**
+  - **CLI Tool:** Globally installable `insighta` command.
+  - **Web Portal:** Premium Next.js dashboard with metrics and profiles.
+- **API Versioning:** Strict `X-API-Version: 1` requirement for all profile endpoints.
+- **Advanced Export:** Export filtered profile data directly to CSV.
+- **Rate Limiting & Logging:** Per-user rate limiting and detailed request logging.
 
-## 📡 Endpoints
+## 🏗️ System Architecture
 
-### 1. Natural Language Search
-**GET** `/api/profiles/search?q={query}`
+The system consists of three main components:
+1. **Backend:** Express.js API with LibSQL (Turso) persistence.
+2. **CLI:** Node.js command-line tool with browser-based OAuth flow.
+3. **Web Portal:** Next.js application with secure HTTP-only cookie session management.
 
-Parses informal phrases into filters.
-* **Examples**:
-  - `?q=young males from nigeria`
-  - `?q=females under 30`
-  - `?q=seniors from united kingdom`
-* **Keywords**: "young" (16-24), "above X", "under X", gender titles, and country names.
+## 🚀 Getting Started
 
-### 2. Get All Profiles (Advanced Query)
-**GET** `/api/profiles`
-
-Supports standard query parameters for precise segmentation:
-* **Filters**: `gender`, `country_id`, `age_group`, `min_age`, `max_age`, `min_gender_probability`, `min_country_probability`.
-* **Sorting**: `sort_by` (`age`, `created_at`, `gender_probability`) and `order` (`asc`, `desc`).
-* **Pagination**: `page` (default: 1) and `limit` (default: 10, max: 50).
-
-### 3. Create Profile
-**POST** `/api/profiles`
-Request body: `{ "name": "bella" }`
-Fetch prediction data concurrently from Genderize, Agify, and Nationalize APIs.
-
-### 4. Single Profile & Delete
-* **GET** `/api/profiles/{id}`: Fetch detailed record.
-* **DELETE** `/api/profiles/{id}`: Remove record from engine.
-
-## 💻 Local Development
-
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-2. **Setup Environment**:
-   Create a `.env` file with your Turso credentials:
-   ```env
-   TURSO_DATABASE_URL=your_libsql_url
-   TURSO_AUTH_TOKEN=your_auth_token
-   ```
-3. **Seed Database**:
-   Populate the engine with benchmark profile data:
-   ```bash
-   npm run seed
-   ```
-4. **Boot Server**:
-   ```bash
-   npm run dev
-   ```
-   The API will be available at `http://localhost:3000`.
-
-## 🧪 Testing
-You can test the engine using standard HTTP clients or terminal commands:
+### 1. Backend Setup
 ```bash
-# Complex Query example
-curl "http://localhost:3000/api/profiles?min_age=25&gender=female&sort_by=age&order=desc"
-
-# NLQ example
-curl "http://localhost:3000/api/profiles/search?q=young+males+from+nigeria"
+cd backend-stage0
+npm install
 ```
+Configure `.env`:
+```env
+TURSO_DATABASE_URL=...
+TURSO_AUTH_TOKEN=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+ACCESS_TOKEN_SECRET=...
+REFRESH_TOKEN_SECRET=...
+REDIRECT_URI=http://localhost:5000/auth/github/callback
+```
+Run the server:
+```bash
+npm run dev
+```
+
+### 2. CLI Setup
+```bash
+cd cli
+npm install
+npm link # To install globally
+```
+Usage:
+```bash
+insighta login
+insighta profiles list --gender male
+insighta profiles search "young males from nigeria"
+insighta profiles export --format csv
+```
+
+### 3. Web Portal Setup
+```bash
+cd web
+npm install
+npm run dev
+```
+Accessible at `http://localhost:3000`.
+
+## 🔒 Security Implementation
+
+### OAuth with PKCE
+The CLI uses Proof Key for Code Exchange (PKCE) to securely authenticate users without a pre-shared secret. It generates a `code_verifier` and `code_challenge`, opens the browser for GitHub auth, and captures the code via a local callback server.
+
+### Token Handling
+- **Access Tokens:** Short-lived (3 mins) JWTs used for authentication.
+- **Refresh Tokens:** Short-lived (5 mins) JWTs used to rotate access tokens. Refresh tokens are invalidated immediately after use.
+- **Web Security:** Uses HTTP-only cookies to prevent XSS-based token theft.
+
+### Role Enforcement
+Roles are enforced via a centralized middleware that checks the `role` field in the user's record before allowing access to restricted endpoints like `POST /api/profiles` or `DELETE /api/profiles/:id`.
+
+## 📡 API Versioning
+All profile-related requests must include the following header:
+`X-API-Version: 1`
+
+## 📊 Rate Limiting
+- `/auth/*`: 10 requests per minute.
+- `/api/*`: 60 requests per minute per user.
+
+## 📝 Engineering Standards
+- **Conventional Commits:** `feat(auth): ...`, `fix(cli): ...`
+- **CI/CD:** GitHub Actions for linting, testing, and build checks.

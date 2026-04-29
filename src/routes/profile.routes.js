@@ -4,15 +4,26 @@ import {
   getSingleProfile,
   getAllProfiles,
   searchProfiles,
-  deleteProfile
+  deleteProfile,
+  exportProfiles
 } from '../controllers/profile.controller.js';
+import { authenticate, authorize, versionCheck } from '../middleware/auth.middleware.js';
+import { apiRateLimiter } from '../middleware/rate-limiter.js';
 
 const router = Router();
 
-router.post('/profiles', createProfile);
+// Apply global middlewares for all profile routes
+router.use(versionCheck);
+router.use(authenticate);
+router.use(apiRateLimiter);
+
 router.get('/profiles', getAllProfiles);
 router.get('/profiles/search', searchProfiles);
+router.get('/profiles/export', exportProfiles);
 router.get('/profiles/:id', getSingleProfile);
-router.delete('/profiles/:id', deleteProfile);
+
+// Admin only routes
+router.post('/profiles', authorize(['admin']), createProfile);
+router.delete('/profiles/:id', authorize(['admin']), deleteProfile);
 
 export default router;
