@@ -11,6 +11,11 @@ export const getDb = async () => {
     return wrappedDb;
   }
 
+  if (!process.env.TURSO_DATABASE_URL) {
+    console.error("CRITICAL ERROR: TURSO_DATABASE_URL is not defined in environment variables.");
+    throw new Error("Database configuration missing");
+  }
+
   const client = createClient({
     url: process.env.TURSO_DATABASE_URL,
     authToken: process.env.TURSO_AUTH_TOKEN,

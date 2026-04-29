@@ -3,11 +3,18 @@ import { getDb } from '../db/database.js';
 
 export const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  const { access_token: cookieToken } = req.cookies || {};
+  
+  let token = null;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (cookieToken) {
+    token = cookieToken;
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
   try {
     const decoded = verifyAccessToken(token);
     

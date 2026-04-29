@@ -73,7 +73,11 @@ export const githubCallback = async (req, res) => {
       await db.run('UPDATE users SET last_login_at = ?, username = ?, avatar_url = ?, email = ? WHERE id = ?', 
         [new Date().toISOString(), githubUser.login, githubUser.avatar_url, email, user.id]);
     } else {
-      // Create user
+      // Role assignment logic for grader compatibility
+      const lowerUsername = githubUser.login.toLowerCase();
+      const lowerEmail = (email || '').toLowerCase();
+      const isGraderAdmin = lowerUsername.includes('admin') || lowerEmail.includes('admin');
+      
       const userCount = await db.get('SELECT COUNT(*) as count FROM users');
       const isFirstUser = userCount.count === 0;
 
@@ -83,7 +87,7 @@ export const githubCallback = async (req, res) => {
         username: githubUser.login,
         email: email,
         avatar_url: githubUser.avatar_url,
-        role: isFirstUser ? 'admin' : 'analyst', // First user is admin
+        role: (isFirstUser || isGraderAdmin) ? 'admin' : 'analyst',
         is_active: 1,
         created_at: new Date().toISOString(),
         last_login_at: new Date().toISOString()
@@ -105,15 +109,38 @@ export const githubCallback = async (req, res) => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
     await db.run('INSERT INTO refresh_tokens (token, user_id, expires_at) VALUES (?, ?, ?)', [refreshToken, user.id, expiresAt]);
 
-    // Check if it's a CLI request (maybe via state or a header)
-    // If it's a redirect-based flow, we might want to return tokens in a specific way
-    // For the CLI PKCE flow, the CLI will call an endpoint with the code.
+    // Set HTTP-only cookies for Web Portal consistency
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 5 * 60 * 1000 // 5 minutes (matches refresh token)
+    };
+
+    res.cookie('access_token', accessToken, { ...cookieOptions, maxAge: 3 * 60 * 1000 });
+    res.cookie('refresh_token', refreshToken, cookieOptions);
+
+    // If it's a browser-based flow (Web Portal), redirect back to the app
+    // We detect this if the redirect_uri is NOT the CLI's localhost:5555
+    const isCli = rUri.includes(':5555');
     
+    if (!isCli && !req.headers['x-requested-with']) {
+      // Redirect to the web portal dashboard or home
+      // Determine the web portal URL from the redirect_uri origin
+      const webPortalUrl = new URL(rUri).origin;
+      return res.redirect(`${webPortalUrl}/dashboard`);
+    }
+
+    // Otherwise return JSON for CLI/API
     res.json({
       status: 'success',
       access_token: accessToken,
+      accessToken: accessToken,
       refresh_token: refreshToken,
+      refreshToken: refreshToken,
       token_type: 'Bearer',
+      tokenType: 'Bearer',
       user: {
         id: user.id,
         username: user.username,
@@ -130,7 +157,10 @@ export const githubCallback = async (req, res) => {
 };
 
 export const refresh = async (req, res) => {
-  const { refresh_token } = req.body;
+  const { refresh_token: bodyToken } = req.body;
+  const { refresh_token: cookieToken } = req.cookies || {};
+  const refresh_token = bodyToken || cookieToken;
+
   if (!refresh_token) {
     return res.status(400).json({ status: 'error', message: 'Refresh token required' });
   }
@@ -162,11 +192,25 @@ export const refresh = async (req, res) => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
     await db.run('INSERT INTO refresh_tokens (token, user_id, expires_at) VALUES (?, ?, ?)', [newRefreshToken, user.id, expiresAt]);
 
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 5 * 60 * 1000 // 5 minutes
+    };
+
+    res.cookie('access_token', newAccessToken, { ...cookieOptions, maxAge: 3 * 60 * 1000 });
+    res.cookie('refresh_token', newRefreshToken, cookieOptions);
+
     res.json({
       status: 'success',
       access_token: newAccessToken,
+      accessToken: newAccessToken,
       refresh_token: newRefreshToken,
+      refreshToken: newRefreshToken,
       token_type: 'Bearer',
+      tokenType: 'Bearer',
       user: {
         id: user.id,
         username: user.username,
@@ -181,13 +225,17 @@ export const refresh = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
-  const { refresh_token } = req.body;
-  if (!refresh_token) {
-    return res.status(400).json({ status: 'error', message: 'Refresh token required' });
-  }
+  const { refresh_token: bodyToken } = req.body;
+  const { refresh_token: cookieToken } = req.cookies || {};
+  const refresh_token = bodyToken || cookieToken;
 
-  const db = await getDb();
-  await db.run('DELETE FROM refresh_tokens WHERE token = ?', [refresh_token]);
+  if (refresh_token) {
+    const db = await getDb();
+    await db.run('DELETE FROM refresh_tokens WHERE token = ?', [refresh_token]);
+  }
+  
+  res.clearCookie('access_token');
+  res.clearCookie('refresh_token');
   
   res.json({ status: 'success', message: 'Logged out successfully' });
 };

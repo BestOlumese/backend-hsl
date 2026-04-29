@@ -10,9 +10,31 @@ const app = express();
 
 app.set('trust proxy', 1); // For rate limiting behind proxies
 app.use(helmet());
-app.use(cors({ origin: '*', credentials: true }));
+
+// CORS configuration - Allow all for development but enforce credentials support
+app.use(cors({ 
+  origin: (origin, callback) => callback(null, true), 
+  credentials: true 
+}));
+
 app.use(express.json());
 app.use(cookieParser());
+
+// Custom CSRF check for cookie-based requests
+app.use((req, res, next) => {
+  if (['POST', 'DELETE', 'PUT', 'PATCH'].includes(req.method) && req.cookies.access_token) {
+    const origin = req.headers.origin || req.headers.referer;
+    if (origin) {
+      const originHost = new URL(origin).host;
+      const requestHost = req.headers.host;
+      if (originHost !== requestHost && !originHost.includes('localhost') && !originHost.includes('127.0.0.1')) {
+         return res.status(403).json({ status: 'error', message: 'CSRF validation failed' });
+      }
+    }
+  }
+  next();
+});
+
 app.use(morgan(':method :url :status :response-time ms'));
 
 // Gracefully intercept express.json() payload parsing errors
